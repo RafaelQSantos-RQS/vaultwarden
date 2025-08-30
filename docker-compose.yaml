@@ -1,0 +1,59 @@
+name: vaultwarden
+
+networks:
+  web:
+    name: ${EXTERNAL_NETWORK_NAME:-web}
+    external: true
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:
+    name: ${POSTGES_DATA_VOLUME_NAME:-vaultwarden-pgdata}
+    external: true
+
+services:
+  server:
+    image: vaultwarden/server:${VAULTWARDEN_TAG}
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./vw-data:/data
+    depends_on:
+      - postgres
+    networks:
+      - web
+      - internal
+    labels:
+      # --- General Settings ---
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+
+      # --- Router Settings ---
+      - "traefik.http.routers.vaultwarden-server.rule=Host(`${HOSTNAME}`)"
+      - "traefik.http.routers.vaultwarden-server.entrypoints=websecure"
+      - "traefik.http.routers.vaultwarden-server.service=vaultwarden-server"
+      - "traefik.http.routers.vaultwarden-server.tls=true"
+
+      # --- Services Settings ---
+      - "traefik.http.services.vaultwarden-server.loadbalancer.server.port=80"
+      - "traefik.http.services.vaultwarden-server.loadbalancer.server.scheme=http"
+  
+  postgres:
+    image: postgres:${POSTGRES_TAG}
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - internal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+      start_period: 30s
